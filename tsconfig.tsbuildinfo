@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/data/foodSource.ts","./src/data/seedFoods.ts","./src/data/types.ts","./src/engine/glycemic.test.ts","./src/engine/glycemic.ts","./src/engine/pairing.test.ts","./src/engine/pairing.ts"],"version":"5.9.3"}

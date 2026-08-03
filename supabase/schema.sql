@@ -3,6 +3,10 @@
 -- Paste this whole file into the Supabase SQL editor and run it once.
 -- Safe to re-run: every statement is idempotent.
 --
+-- It expects the roles Supabase creates (anon, authenticated, service_role) and
+-- the auth schema. To try it on a plain Postgres, stub auth.users, auth.uid(),
+-- the supabase_realtime publication, and those three roles first.
+--
 -- Model: a "household" owns the data. Everyone in the household sees and edits
 -- the same subscriptions. Row-level security is what actually enforces that, so
 -- the anon key in the browser can only ever reach your own household's rows.
@@ -79,7 +83,9 @@ create table if not exists public.subscriptions (
 -- ---------------------------------------------------------------- updated_at
 
 create or replace function public.touch_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = public
+as $$
 begin
   new.updated_at = now();
   return new;
@@ -206,6 +212,33 @@ begin
   return code;
 end;
 $$;
+
+-- ---------------------------------------------------------------- privileges
+
+-- Every function above is SECURITY DEFINER, so it runs with the owner's rights
+-- and bypasses RLS by design. Each guards itself, but none has a legitimate
+-- caller who isn't signed in — so drop the implicit PUBLIC grant and hand
+-- EXECUTE only to the roles that need it. Without this, Supabase's own linter
+-- flags them as anonymously callable (lint 0028).
+--
+-- `authenticated` must keep EXECUTE on is_household_member: RLS policy
+-- expressions are evaluated as the querying role, so revoking it there makes
+-- every policy check error out instead of simply returning no rows.
+
+revoke execute on function public.is_household_member(uuid)      from public, anon;
+revoke execute on function public.create_household(text)         from public, anon;
+revoke execute on function public.join_household(text)           from public, anon;
+revoke execute on function public.household_member_emails(uuid)  from public, anon;
+revoke execute on function public.rotate_invite_code(uuid)       from public, anon;
+
+grant execute on function public.is_household_member(uuid)       to authenticated, service_role;
+grant execute on function public.create_household(text)          to authenticated, service_role;
+grant execute on function public.join_household(text)            to authenticated, service_role;
+grant execute on function public.household_member_emails(uuid)   to authenticated, service_role;
+grant execute on function public.rotate_invite_code(uuid)        to authenticated, service_role;
+
+-- Only ever fires from the trigger; never reachable over the API.
+revoke execute on function public.touch_updated_at() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------- RLS
 

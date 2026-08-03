@@ -96,8 +96,15 @@ and fill in the two values. Restart `npm run dev`.
 
 **4. Turn off email confirmation (optional but recommended).** In
 **Authentication → Sign In / Providers → Email**, switch off *Confirm email*.
-For a two-person app it saves a round trip through the inbox. Leave it on if
-you'd rather verify addresses.
+For a two-person app it saves a round trip through the inbox, and Supabase's
+built-in email sender is rate-limited and prone to landing in spam. Leave it on
+if you'd rather verify addresses.
+
+> Don't create users by inserting into `auth.users` by hand. GoTrue expects
+> columns the app-facing schema doesn't show (its token fields must be empty
+> strings rather than NULL, and it wants a matching `auth.identities` row), and
+> a hand-made row makes sign-in fail with a 500 "Database error querying
+> schema". Sign up through the app, or use the Auth → Users panel.
 
 **5. Sign up and share.** Open the app, click **Sign in to sync**, create an
 account, and choose **Start a new one**. You'll get an invite code under

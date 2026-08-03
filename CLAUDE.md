@@ -2,46 +2,136 @@
 
 This file gives guidance to Claude Code (and other AI assistants) when working in this repository.
 
-## Current state of the repository
+## What this project is
 
-> **This repository is currently an empty scaffold.** At the time of writing it contains only this `CLAUDE.md` and a placeholder `README.md` (`# cl_code-app`). There is no application source code, build configuration, dependency manifest, test suite, or CI pipeline yet.
+A **subscription tracker**: an installable PWA for recurring charges (streaming, music production
+tools, meal delivery, supplements) and for fixed-term payment plans that end after a set number of
+charges. It supports pausing a subscription and resuming it later, and two people sharing one list.
 
-Because there is no codebase to describe, most of the sections below are **forward-looking guidance**: they tell you how to behave while the project is empty and what to fill in as soon as real code lands. Do not document structure, commands, or conventions that do not actually exist — keep this file honest and update it the moment the project gains substance.
+**It runs in two modes, and both must keep working:**
 
-## What to do first when real code arrives
+- **Local** — no Supabase credentials in the build, or signed out. State lives in local storage
+  under `subscription-tracker:data`. No network, no account. This is the default and the fallback.
+- **Cloud** — signed in to a household. The household's Postgres rows are the source of truth;
+  writes go out optimistically and realtime pushes the other person's edits back. Cloud data is
+  cached under `subscription-tracker:cache:<householdId>`, deliberately a *different* key so it is
+  never mistaken for local-only data during the first-sign-in upload offer.
 
-When the repository starts to hold an actual application, update this file with the concrete details. The most valuable things to capture (in rough priority order):
+Never make cloud sync mandatory. `isCloudConfigured` is false whenever the env vars are absent, and
+every cloud path must no-op rather than throw in that case.
 
-1. **Project type and stack** — language(s), framework(s), and runtime versions. Confirm by reading the dependency manifest (e.g. `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`) rather than guessing.
-2. **How to install dependencies** — the exact command (`npm install`, `pip install -e .`, `go mod download`, etc.).
-3. **How to build** — the build command and any required environment variables.
-4. **How to run the app locally** — entrypoint, dev server command, default port.
-5. **How to run tests and linters** — the exact commands, and how to run a single test (this is the highest-leverage thing for an AI assistant to know).
-6. **Directory layout** — a short map of the top-level directories and what lives in each.
-7. **Key conventions** — formatting/lint rules, naming patterns, commit message style, and any project-specific idioms that aren't obvious from the code.
+## Stack
 
-A fast way to regenerate this file once code exists is to re-run the `/init` workflow, which inspects the codebase and drafts an updated `CLAUDE.md`.
+- **React 19** + **TypeScript** (strict, plus `noUncheckedIndexedAccess` and `noUnusedLocals`)
+- **Vite 6** for dev/build, **Vitest 3** for tests
+- **Supabase** (`@supabase/supabase-js`) for optional auth + Postgres + realtime
+- **vite-plugin-pwa** for the installable app shell
+- Hand-written CSS in `src/index.css` — no UI or styling library. Theming is CSS custom properties
+  on `:root` with a `prefers-color-scheme: dark` override; both themes must stay legible.
 
-## Repository facts (known today)
+## Commands
 
-- **Repository:** `djbigsexy/cl_code-app`
-- **Default branch:** `main`
-- **README:** `README.md` — currently just the project title.
+Cloud sync is off until `.env` exists (see `.env.example`); without it everything below still runs.
 
-## Git workflow and branch conventions
+```bash
+npm install
+npm run dev        # dev server on :5173
+npm run build      # tsc -b && vite build
+npm run preview    # serve dist/ on :4173
+npm test           # vitest run
+npm run typecheck  # tsc -b --noEmit
+```
 
-This repository is worked on through Claude Code's remote (cloud) execution environment. Keep the following in mind:
+Run a single test file or case:
 
-- **Do not commit directly to `main`.** Develop on a dedicated feature branch and open changes from there.
-- The container is **ephemeral**: the repo is cloned fresh when a session starts and reclaimed afterward. Anything worth keeping must be **committed and pushed** before the session ends.
-- **Push with upstream tracking:** `git push -u origin <branch-name>`. On transient network failures, retry a few times with exponential backoff (2s, 4s, 8s, 16s).
-- **Prefer fetching specific branches:** `git fetch origin <branch-name>`; pull with `git pull origin <branch-name>`.
+```bash
+npx vitest run src/lib/billing.test.ts
+npx vitest run -t "never lets a pause undo a completed payment"
+```
+
+## Layout
+
+```
+supabase/schema.sql     Tables, RLS policies, sharing RPCs. Run once in Supabase.
+.github/workflows/      Pages deploy; injects the Vite env vars from repo secrets.
+src/
+  types.ts              Subscription / Category / Account / AppData
+  useAppData.ts         Single owner of app state; local vs cloud mode lives here
+  App.tsx               Layout, filtering, sorting, modal wiring, sync gate
+  lib/
+    dates.ts            UTC calendar-day math (YYYY-MM-DD strings)
+    billing.ts          Schedule derivation, pause/resume/cancel  ← the core
+    billing.test.ts     Tests for the above
+    storage.ts          Local storage: load/save/normalize/cache, default categories
+    money.ts            Currency formatting
+    supabase.ts         Client construction; `isCloudConfigured`
+    cloud.ts            All Postgres queries + the snake_case <-> camelCase mapping
+  components/           Summary, SubscriptionCard, SubscriptionForm, Settings, Modal,
+                        AuthForm, HouseholdSetup, SharingPanel
+```
+
+## Domain rules that matter
+
+These are the non-obvious invariants. Breaking one is a real bug, and `billing.test.ts` covers
+each — run the tests after touching `lib/billing.ts`.
+
+- **Time-dependent state is derived, never stored.** `getSchedule()` recomputes status, payment
+  counts, and the next charge date from the current date on every call. A plan finishing its last
+  payment reports itself `completed` with nothing scheduled to run. Don't cache these onto the
+  record.
+- **Dates are calendar days in UTC**, held as `YYYY-MM-DD` strings. Never build a local `Date` from
+  user input — a user west of UTC will see charges land a day early. Use the helpers in `dates.ts`.
+- **Month arithmetic clamps the day and always steps from the anchor.** Jan 31 + 1 month is Feb 28;
+  Jan 31 + 2 months is Mar 31, *not* Feb 28 + 1 month. Stepping iteratively compounds the clamp and
+  silently drifts the billing day, so always compute `anchor + n * cycle`.
+- **A pause must never move the paid count backwards.** `billingAnchor` marks the start of the
+  *current* billing run only; charges from earlier runs are banked in `paymentsCarried`, and
+  `paymentsMade` is the sum. Shifting the anchor alone would un-make past payments.
+- **Resuming credits back unused paid time.** `pauseCycleDaysRemaining` records how much of the
+  paid-for period was left when pausing; resuming schedules the next charge that far out. Pausing
+  right after a charge must not forfeit the period just bought.
+- **Paused, canceled, and completed subscriptions are excluded from spend totals**, and their
+  counts freeze at the date they stopped rather than drifting upward.
+- **Totals never mix currencies.** Amounts are grouped and reported per currency; do not invent an
+  exchange rate.
+- **Row-level security is the only thing protecting the data.** The anon key ships in the browser,
+  so every table is RLS-enabled and gated on `is_household_member()`. That helper is
+  `SECURITY DEFINER` because a policy on `household_members` cannot query `household_members`
+  without infinite recursion. If you add a table, add its policy in the same change.
+- **The service worker must not touch Supabase requests.** `vite.config.ts` deliberately has no
+  `runtimeCaching`: with no matching rule the worker never calls `respondWith`, so API calls go
+  straight to the network. A `NetworkOnly` rule is not a harmless no-op — it routes every call
+  through the worker for nothing. Caching them would serve stale money figures, which is worse
+  than the honest "Offline" badge.
+- **`normalize()` and `cloud.ts` are the two trust boundaries.** New `Subscription` fields need a
+  default in `normalize()`, a column in `schema.sql`, and an entry in *both* `toSubscription` and
+  `fromSubscription` — miss one and the field silently stops persisting.
+
+## Conventions
+
+- Two-space indent, single quotes, semicolons — match the surrounding files.
+- Keep pure logic in `lib/` and test it there. Components stay presentational; state changes go
+  through the `actions` object in `useAppData.ts`.
+- Comments explain *why*, not *what* — the existing ones flag reasoning that isn't obvious from
+  the code (clamping, freezing, currency grouping). Match that density; don't narrate.
+- Cloud failures surface as a banner or an "Offline" badge, never a thrown error or a blank screen.
+  Route user-facing messages through `friendly()` so nobody reads "Failed to fetch".
+
+## Git workflow
+
+- **Do not commit directly to `main`.** Work on a feature branch.
+- The container is ephemeral — commit and push anything worth keeping before the session ends.
+- Push with upstream tracking: `git push -u origin <branch-name>`; retry transient network failures
+  with backoff (2s, 4s, 8s, 16s).
 - **Do not open a pull request unless explicitly asked.**
-- Write clear, descriptive commit messages that explain the intent of the change.
 
 ## Guidance for AI assistants
 
-- **Keep this file truthful.** If you add a build system, tests, or a source tree, document them here in the same change. If you remove something, delete its description. An out-of-date `CLAUDE.md` is worse than a short one.
-- **Verify before you document.** Read the actual config and source files before writing commands or structure into this file; never copy conventions from memory or from other projects.
-- **Match the project once it has a style.** When code and tooling exist, follow the established formatting, naming, and patterns rather than introducing new ones.
-- **Don't invent scaffolding.** Because the repo is empty, there are no hidden conventions to honor yet — but resist adding speculative folders, frameworks, or boilerplate that the user hasn't asked for.
+- **Keep this file truthful.** If you change the stack, commands, or the domain rules above, update
+  this file in the same change.
+- **Verify before documenting.** Read the actual config and source rather than assuming.
+- Run `npm test` and `npm run build` before committing; both are fast.
+- **Changing `supabase/schema.sql` means re-verifying it.** It can be run against a plain Postgres
+  by stubbing `auth.users`, `auth.uid()`, and the `supabase_realtime` publication. Test policies as
+  a non-superuser role (`set role authenticated`) — superusers bypass RLS, so testing as `postgres`
+  proves nothing.

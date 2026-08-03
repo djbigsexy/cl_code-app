@@ -132,6 +132,12 @@ publishes it. Before the first run:
 Any static host works equally well (Netlify, Vercel, Cloudflare Pages); the
 build output is a plain `dist/` folder.
 
+**Point Supabase at the deployed URL.** In **Authentication → URL
+Configuration**, set *Site URL* to your live address and add it to *Redirect
+URLs*. It defaults to `localhost:3000`, so if you leave email confirmation
+switched on, the link in the confirmation email will send people to a dead
+address instead of the app.
+
 **Installing it, once it's live:**
 
 - **iPhone/iPad:** open the URL in Safari → Share → *Add to Home Screen*. (It

@@ -91,6 +91,37 @@ export function save(data: AppData): void {
   }
 }
 
+/**
+ * Cloud data is cached under its own key so the app can paint immediately (and
+ * offline) on launch, without ever being mistaken for the local-only dataset
+ * that gets offered for upload at first sign-in.
+ */
+function cacheKey(householdId: string): string {
+  return `subscription-tracker:cache:${householdId}`;
+}
+
+export function loadCache(householdId: string): AppData | null {
+  try {
+    const raw = localStorage.getItem(cacheKey(householdId));
+    return raw ? normalize(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCache(householdId: string, data: AppData): void {
+  try {
+    localStorage.setItem(cacheKey(householdId), JSON.stringify(data));
+  } catch {
+    // Cache is best-effort.
+  }
+}
+
+/** True when there is local-only data worth offering to upload. */
+export function hasLocalData(): boolean {
+  return load().subscriptions.length > 0;
+}
+
 export function toJSON(data: AppData): string {
   return JSON.stringify(data, null, 2);
 }

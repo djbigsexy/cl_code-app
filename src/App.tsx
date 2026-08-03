@@ -7,6 +7,9 @@ import { SubscriptionCard } from './components/SubscriptionCard';
 import { SubscriptionForm } from './components/SubscriptionForm';
 import { Settings } from './components/Settings';
 import { Modal } from './components/Modal';
+import { AuthForm } from './components/AuthForm';
+import { HouseholdSetup } from './components/HouseholdSetup';
+import { SharingPanel } from './components/SharingPanel';
 
 type StatusFilter = 'all' | DerivedStatus;
 type SortKey = 'next' | 'cost' | 'name' | 'category';
@@ -19,10 +22,18 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'canceled', label: 'Canceled' },
 ];
 
+const SYNC_LABEL: Record<string, string> = {
+  loading: 'Syncing…',
+  synced: 'Synced',
+  offline: 'Offline',
+  error: 'Sync problem',
+};
+
 export default function App() {
-  const { data, actions } = useAppData();
+  const { data, actions, sync, auth } = useAppData();
   const [editing, setEditing] = useState<Subscription | 'new' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [categoryId, setCategoryId] = useState('all');
@@ -89,6 +100,19 @@ export default function App() {
   }, [data.subscriptions, query, status, categoryId, accountId, sortKey, categoriesById]);
 
   const hasAny = data.subscriptions.length > 0;
+  const inCloud = Boolean(sync.user && sync.household);
+
+  // Signed in but not yet in a shared household — nothing else makes sense yet.
+  if (sync.configured && sync.user && !sync.household && sync.status !== 'loading') {
+    return (
+      <HouseholdSetup
+        email={sync.user.email ?? ''}
+        onCreate={auth.createHousehold}
+        onJoin={auth.joinHousehold}
+        onSignOut={auth.signOut}
+      />
+    );
+  }
 
   return (
     <div className="app">
@@ -102,6 +126,16 @@ export default function App() {
           </p>
         </div>
         <div className="button-row">
+          {inCloud && (
+            <span className={`sync-chip sync-${sync.status}`} title={sync.error ?? undefined}>
+              {SYNC_LABEL[sync.status] ?? 'Synced'}
+            </span>
+          )}
+          {sync.configured && !sync.user && (
+            <button className="btn" onClick={() => setShowAuth(true)}>
+              Sign in to sync
+            </button>
+          )}
           <button className="btn" onClick={() => setShowSettings(true)}>
             Settings
           </button>
@@ -110,6 +144,31 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {sync.error && sync.status === 'error' && (
+        <div className="banner banner-error">
+          <span>{sync.error}</span>
+          <button className="btn btn-small" onClick={auth.refreshNow}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {sync.localDataPending && inCloud && (
+        <div className="banner">
+          <span>
+            This browser has subscriptions that aren't in your shared list yet. Copy them over?
+          </span>
+          <div className="button-row">
+            <button className="btn btn-small btn-primary" onClick={() => void auth.uploadLocalData()}>
+              Copy them over
+            </button>
+            <button className="btn btn-small btn-ghost" onClick={auth.dismissLocalData}>
+              No thanks
+            </button>
+          </div>
+        </div>
+      )}
 
       {hasAny && <Summary subscriptions={data.subscriptions} categories={data.categories} />}
 
@@ -215,10 +274,33 @@ export default function App() {
         </Modal>
       )}
 
+      {showAuth && (
+        <Modal title="Sync and share" onClose={() => setShowAuth(false)}>
+          <AuthForm
+            onSignIn={auth.signIn}
+            onSignUp={auth.signUp}
+            onDone={() => setShowAuth(false)}
+          />
+        </Modal>
+      )}
+
       {showSettings && (
         <Modal title="Settings" onClose={() => setShowSettings(false)}>
           <Settings
             data={data}
+            synced={inCloud}
+            sharing={
+              <SharingPanel
+                sync={sync}
+                onSignInClick={() => {
+                  setShowSettings(false);
+                  setShowAuth(true);
+                }}
+                onSignOut={auth.signOut}
+                onRotateCode={auth.rotateInviteCode}
+                onReloadMembers={auth.reloadMembers}
+              />
+            }
             onAddAccount={actions.addAccount}
             onRemoveAccount={actions.removeAccount}
             onAddCategory={actions.addCategory}

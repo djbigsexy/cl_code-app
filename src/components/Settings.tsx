@@ -1,9 +1,13 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { AppData } from '../types';
 import { toJSON } from '../lib/storage';
 
 interface Props {
   data: AppData;
+  /** The sharing/sync section, rendered first. */
+  sharing: ReactNode;
+  /** True when data lives in the cloud rather than only in this browser. */
+  synced: boolean;
   onAddAccount: (name: string, last4: string) => void;
   onRemoveAccount: (id: string) => void;
   onAddCategory: (name: string, color: string) => void;
@@ -14,6 +18,8 @@ interface Props {
 
 export function Settings({
   data,
+  sharing,
+  synced,
   onAddAccount,
   onRemoveAccount,
   onAddCategory,
@@ -50,6 +56,8 @@ export function Settings({
 
   return (
     <div className="settings">
+      {sharing}
+
       <section>
         <h3>Accounts</h3>
         <p className="muted">The cards and accounts your subscriptions are charged to.</p>
@@ -155,8 +163,9 @@ export function Settings({
       <section>
         <h3>Your data</h3>
         <p className="muted">
-          Everything is stored in this browser only — nothing is uploaded anywhere. Export a copy if
-          you clear your browser data or want it on another device.
+          {synced
+            ? 'Your subscriptions are synced to your account, so they survive clearing this browser. An export is still a handy offline backup.'
+            : 'Everything is stored in this browser only — nothing is uploaded anywhere. Export a copy if you clear your browser data or want it on another device.'}
         </p>
         <div className="button-row">
           <button className="btn" onClick={handleExport}>
@@ -179,7 +188,8 @@ export function Settings({
         </div>
         {importError && <p className="field-error">{importError}</p>}
         <p className="muted small">
-          Importing replaces everything currently tracked. Export first if you're not sure.
+          Importing replaces everything currently tracked{synced ? ', for everyone sharing it' : ''}.
+          Export first if you're not sure.
         </p>
       </section>
     </div>

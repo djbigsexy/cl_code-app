@@ -441,3 +441,122 @@ textarea { resize: vertical; }
   .upcoming li .muted { display: none; }
   .app-header { flex-direction: column; }
 }
+
+/* ---------- sync, auth, banners ---------- */
+
+.sync-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  align-self: center;
+}
+
+.sync-synced { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.sync-offline, .sync-error { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  font-size: 0.92rem;
+  box-shadow: var(--shadow);
+}
+
+.banner-error { border-left-color: var(--danger); }
+
+.notice {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--ok);
+}
+
+/* ---------- household setup ---------- */
+
+.setup {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.setup-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 28px;
+  width: min(520px, 100%);
+  display: grid;
+  gap: 18px;
+}
+
+.setup-card h2 { font-size: 0.95rem; }
+.setup-card p { margin: 0; }
+.setup-card section { display: grid; gap: 8px; }
+
+.setup-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.setup-or::before, .setup-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ---------- sharing ---------- */
+
+.invite {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--surface-2);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.invite > div:first-child { display: grid; gap: 2px; }
+
+.invite-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+/* Keeps the installed app clear of the iPhone notch and home indicator. */
+@supports (padding: max(0px)) {
+  .app {
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+    padding-bottom: max(80px, env(safe-area-inset-bottom));
+  }
+}

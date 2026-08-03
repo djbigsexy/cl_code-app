@@ -4,3 +4,8 @@ dist/
 .DS_Store
 .vite/
 *.tsbuildinfo
+
+# Local env files — never commit real keys
+.env
+.env.local
+.env.*.local

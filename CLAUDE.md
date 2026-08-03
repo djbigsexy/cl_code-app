@@ -4,22 +4,34 @@ This file gives guidance to Claude Code (and other AI assistants) when working i
 
 ## What this project is
 
-A **subscription tracker**: a single-page web app for recurring charges (streaming, music
-production tools, meal delivery, supplements) and for fixed-term payment plans that end after a
-set number of charges. It supports pausing a subscription and resuming it later.
+A **subscription tracker**: an installable PWA for recurring charges (streaming, music production
+tools, meal delivery, supplements) and for fixed-term payment plans that end after a set number of
+charges. It supports pausing a subscription and resuming it later, and two people sharing one list.
 
-There is **no backend**. All state lives in the browser's local storage under the
-`subscription-tracker:data` key, with JSON export/import as the backup path. Don't add a server,
-database, or auth layer unless the user asks for one.
+**It runs in two modes, and both must keep working:**
+
+- **Local** — no Supabase credentials in the build, or signed out. State lives in local storage
+  under `subscription-tracker:data`. No network, no account. This is the default and the fallback.
+- **Cloud** — signed in to a household. The household's Postgres rows are the source of truth;
+  writes go out optimistically and realtime pushes the other person's edits back. Cloud data is
+  cached under `subscription-tracker:cache:<householdId>`, deliberately a *different* key so it is
+  never mistaken for local-only data during the first-sign-in upload offer.
+
+Never make cloud sync mandatory. `isCloudConfigured` is false whenever the env vars are absent, and
+every cloud path must no-op rather than throw in that case.
 
 ## Stack
 
 - **React 19** + **TypeScript** (strict, plus `noUncheckedIndexedAccess` and `noUnusedLocals`)
 - **Vite 6** for dev/build, **Vitest 3** for tests
+- **Supabase** (`@supabase/supabase-js`) for optional auth + Postgres + realtime
+- **vite-plugin-pwa** for the installable app shell
 - Hand-written CSS in `src/index.css` — no UI or styling library. Theming is CSS custom properties
   on `:root` with a `prefers-color-scheme: dark` override; both themes must stay legible.
 
 ## Commands
+
+Cloud sync is off until `.env` exists (see `.env.example`); without it everything below still runs.
 
 ```bash
 npm install
@@ -40,17 +52,22 @@ npx vitest run -t "never lets a pause undo a completed payment"
 ## Layout
 
 ```
+supabase/schema.sql     Tables, RLS policies, sharing RPCs. Run once in Supabase.
+.github/workflows/      Pages deploy; injects the Vite env vars from repo secrets.
 src/
   types.ts              Subscription / Category / Account / AppData
-  useAppData.ts         Single owner of app state; mirrors to localStorage
-  App.tsx               Layout, filtering, sorting, modal wiring
+  useAppData.ts         Single owner of app state; local vs cloud mode lives here
+  App.tsx               Layout, filtering, sorting, modal wiring, sync gate
   lib/
     dates.ts            UTC calendar-day math (YYYY-MM-DD strings)
     billing.ts          Schedule derivation, pause/resume/cancel  ← the core
     billing.test.ts     Tests for the above
-    storage.ts          Load/save/normalize, default categories
+    storage.ts          Local storage: load/save/normalize/cache, default categories
     money.ts            Currency formatting
-  components/           Summary, SubscriptionCard, SubscriptionForm, Settings, Modal
+    supabase.ts         Client construction; `isCloudConfigured`
+    cloud.ts            All Postgres queries + the snake_case <-> camelCase mapping
+  components/           Summary, SubscriptionCard, SubscriptionForm, Settings, Modal,
+                        AuthForm, HouseholdSetup, SharingPanel
 ```
 
 ## Domain rules that matter
@@ -77,6 +94,18 @@ each — run the tests after touching `lib/billing.ts`.
   counts freeze at the date they stopped rather than drifting upward.
 - **Totals never mix currencies.** Amounts are grouped and reported per currency; do not invent an
   exchange rate.
+- **Row-level security is the only thing protecting the data.** The anon key ships in the browser,
+  so every table is RLS-enabled and gated on `is_household_member()`. That helper is
+  `SECURITY DEFINER` because a policy on `household_members` cannot query `household_members`
+  without infinite recursion. If you add a table, add its policy in the same change.
+- **The service worker must not touch Supabase requests.** `vite.config.ts` deliberately has no
+  `runtimeCaching`: with no matching rule the worker never calls `respondWith`, so API calls go
+  straight to the network. A `NetworkOnly` rule is not a harmless no-op — it routes every call
+  through the worker for nothing. Caching them would serve stale money figures, which is worse
+  than the honest "Offline" badge.
+- **`normalize()` and `cloud.ts` are the two trust boundaries.** New `Subscription` fields need a
+  default in `normalize()`, a column in `schema.sql`, and an entry in *both* `toSubscription` and
+  `fromSubscription` — miss one and the field silently stops persisting.
 
 ## Conventions
 
@@ -85,8 +114,8 @@ each — run the tests after touching `lib/billing.ts`.
   through the `actions` object in `useAppData.ts`.
 - Comments explain *why*, not *what* — the existing ones flag reasoning that isn't obvious from
   the code (clamping, freezing, currency grouping). Match that density; don't narrate.
-- `normalize()` in `storage.ts` is the trust boundary for anything parsed from JSON. New fields on
-  `Subscription` need a default there, or old exports will break on import.
+- Cloud failures surface as a banner or an "Offline" badge, never a thrown error or a blank screen.
+  Route user-facing messages through `friendly()` so nobody reads "Failed to fetch".
 
 ## Git workflow
 
@@ -102,3 +131,7 @@ each — run the tests after touching `lib/billing.ts`.
   this file in the same change.
 - **Verify before documenting.** Read the actual config and source rather than assuming.
 - Run `npm test` and `npm run build` before committing; both are fast.
+- **Changing `supabase/schema.sql` means re-verifying it.** It can be run against a plain Postgres
+  by stubbing `auth.users`, `auth.uid()`, and the `supabase_realtime` publication. Test policies as
+  a non-superuser role (`set role authenticated`) — superusers bypass RLS, so testing as `postgres`
+  proves nothing.

@@ -31,6 +31,12 @@ export interface SyncState {
   error: string | null;
   /** True when local-only data exists that could be uploaded on first sign-in. */
   localDataPending: boolean;
+  /**
+   * True while the user is here from a password-reset link. The token in that
+   * link signs them in, so without this flag they'd land in the app with no
+   * prompt to actually set the new password they came to set.
+   */
+  recovering: boolean;
 }
 
 /**
@@ -49,6 +55,7 @@ export function useAppData() {
   const [status, setStatus] = useState<SyncStatus>(isCloudConfigured ? 'loading' : 'local');
   const [error, setError] = useState<string | null>(null);
   const [localDataPending, setLocalDataPending] = useState(false);
+  const [recovering, setRecovering] = useState(false);
 
   // Read by the action callbacks so they never close over stale state.
   const dataRef = useRef(data);
@@ -73,7 +80,14 @@ export function useAppData() {
   useEffect(() => {
     if (!supabase) return;
     void supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      // Following a reset link signs the user in and fires this event. Hold
+      // them on the "set a new password" screen until they've actually set one,
+      // otherwise the link just logs them in and the old password stays.
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true);
+      if (event === 'SIGNED_OUT') setRecovering(false);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -278,6 +292,33 @@ export function useAppData() {
         await supabase.auth.signOut();
       },
 
+      /**
+       * Email a password-reset link. `redirectTo` is built from the current
+       * address rather than hardcoded, so it works on localhost and on a
+       * GitHub Pages subpath alike — but the resulting URL must be listed
+       * under Authentication → URL Configuration, or Supabase sends the user
+       * to the project's Site URL instead.
+       */
+      async sendPasswordReset(email: string): Promise<void> {
+        if (!supabase) throw new Error('Cloud sync is not configured');
+        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const { error: e } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (e) throw new Error(e.message);
+      },
+
+      /** Set a new password for the signed-in user. */
+      async updatePassword(password: string): Promise<void> {
+        if (!supabase) throw new Error('Cloud sync is not configured');
+        const { error: e } = await supabase.auth.updateUser({ password });
+        if (e) throw new Error(e.message);
+        setRecovering(false);
+      },
+
+      /** Leave the recovery screen without setting a password. */
+      cancelRecovery(): void {
+        setRecovering(false);
+      },
+
       async createHousehold(name: string): Promise<void> {
         const h = await cloud.createHousehold(name);
         setHousehold(h);
@@ -347,6 +388,7 @@ export function useAppData() {
     members,
     error,
     localDataPending,
+    recovering,
   };
 
   return { data, actions, sync, auth };

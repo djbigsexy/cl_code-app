@@ -134,9 +134,13 @@ build output is a plain `dist/` folder.
 
 **Point Supabase at the deployed URL.** In **Authentication → URL
 Configuration**, set *Site URL* to your live address and add it to *Redirect
-URLs*. It defaults to `localhost:3000`, so if you leave email confirmation
-switched on, the link in the confirmation email will send people to a dead
+URLs*. It defaults to `localhost:3000`, so until you change it, both the
+confirmation email and the password-reset email will send people to a dead
 address instead of the app.
+
+Add every address you open the app from, including `http://localhost:5173/**`
+for local development. Supabase only redirects to addresses on that list; an
+unlisted one silently falls back to the Site URL.
 
 **Installing it, once it's live:**
 
@@ -148,6 +152,45 @@ address instead of the app.
 It then opens fullscreen with its own icon. The app shell is cached, so it
 launches offline and shows your last-synced data with an **Offline** badge;
 changes need a connection to reach the other person.
+
+## Forgotten passwords
+
+**Forgot your password?** on the sign-in form emails a reset link. Opening it
+puts you on a *Set a new password* screen — the link signs you in, so the app
+deliberately holds you there until you've actually set one, rather than letting
+you slip into the app with the old password still in place.
+
+**Settings → Sharing → Change password** does the same thing while signed in.
+
+The reset email goes to the address you type, and the confirmation message is
+the same whether or not an account exists, so the form can't be used to find
+out who has signed up. The link lands on whatever address the app is served
+from, which must be listed under *Redirect URLs* (see above).
+
+Supabase's built-in email sender is rate-limited to a few messages per hour and
+often lands in spam. For a household of two that's usually fine; if it isn't,
+configure a custom SMTP provider under **Authentication → Emails**.
+
+## Keeping the project awake
+
+Supabase pauses free-tier projects after about a week with no activity. A paused
+project means the app can't sign anyone in — it reports *Couldn't reach the
+server*, which looks like a bug rather than a sleeping backend — until you
+restore it from the dashboard.
+
+[`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) prevents
+that: every three days it calls `public.keepalive()`, a function that exists
+only to give the ping something real to execute, so the request reaches Postgres
+and counts as activity. It reuses the same two repository secrets as the deploy,
+and fails loudly if the ping doesn't come back 200 — a keep-alive that fails
+silently is worse than none.
+
+You can run it on demand from the **Actions** tab.
+
+One caveat: GitHub disables scheduled workflows in a repository with no activity
+for 60 days. If you don't touch the repo for two months the keep-alive stops and
+the project will pause. Re-enable it from the Actions tab, or run it manually
+now and then.
 
 ## Your data
 

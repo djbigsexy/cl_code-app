@@ -213,6 +213,30 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------- keepalive
+
+-- A deliberate target for the scheduled keep-alive ping
+-- (.github/workflows/keepalive.yml). Free-tier projects pause after roughly a
+-- week without activity, and a paused project can't sign anyone in. The ping
+-- has to reach Postgres to count, so this gives it something real to execute
+-- rather than relying on an endpoint that errors before it gets there.
+--
+-- SECURITY INVOKER: it touches no tables, so it needs no elevated rights, and
+-- it stays out of the SECURITY DEFINER advisories.
+create or replace function public.keepalive()
+returns timestamptz
+language sql
+security invoker
+stable
+set search_path = public
+as $$ select now() $$;
+
+comment on function public.keepalive() is
+  'Returns now(). Called by the scheduled keep-alive workflow so the project does not auto-pause.';
+
+revoke execute on function public.keepalive() from public;
+grant execute on function public.keepalive() to anon, authenticated, service_role;
+
 -- ---------------------------------------------------------------- privileges
 
 -- Every function above is SECURITY DEFINER, so it runs with the owner's rights

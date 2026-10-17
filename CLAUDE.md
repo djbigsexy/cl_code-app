@@ -67,7 +67,7 @@ src/
     supabase.ts         Client construction; `isCloudConfigured`
     cloud.ts            All Postgres queries + the snake_case <-> camelCase mapping
   components/           Summary, SubscriptionCard, SubscriptionForm, Settings, Modal,
-                        AuthForm, HouseholdSetup, SharingPanel
+                        AuthForm, PasswordForm, HouseholdSetup, SharingPanel
 ```
 
 ## Domain rules that matter
@@ -103,6 +103,17 @@ each — run the tests after touching `lib/billing.ts`.
   straight to the network. A `NetworkOnly` rule is not a harmless no-op — it routes every call
   through the worker for nothing. Caching them would serve stale money figures, which is worse
   than the honest "Offline" badge.
+- **A password-recovery link must not drop the user into the app.** The token in
+  the link signs them in, so `App.tsx` gates on `sync.recovering` *before* every other
+  branch and holds them on the set-a-new-password screen. The flag is set from the
+  `PASSWORD_RECOVERY` event in `useAppData`'s `onAuthStateChange`. Without that gate the
+  link silently becomes a login and the old password stays live.
+- **`resetPasswordForEmail` must say the same thing either way.** The notice after
+  sending is identical whether or not the address has an account, so the form can't be
+  used to enumerate who has signed up. `redirectTo` is derived from
+  `window.location` rather than hardcoded so it works on a Pages subpath — but the
+  resulting URL has to be listed under Supabase's *Redirect URLs* or the link goes to
+  the Site URL instead.
 - **`normalize()` and `cloud.ts` are the two trust boundaries.** New `Subscription` fields need a
   default in `normalize()`, a column in `schema.sql`, and an entry in *both* `toSubscription` and
   `fromSubscription` — miss one and the field silently stops persisting.

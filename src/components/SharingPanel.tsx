@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { SyncState } from '../useAppData';
+import { PasswordForm } from './PasswordForm';
 
 interface Props {
   sync: SyncState;
@@ -7,6 +8,7 @@ interface Props {
   onSignOut: () => Promise<void>;
   onRotateCode: () => Promise<void>;
   onReloadMembers: () => Promise<void>;
+  onChangePassword: (password: string) => Promise<void>;
 }
 
 export function SharingPanel({
@@ -15,9 +17,12 @@ export function SharingPanel({
   onSignOut,
   onRotateCode,
   onReloadMembers,
+  onChangePassword,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   useEffect(() => {
     void onReloadMembers();
@@ -119,11 +124,28 @@ export function SharingPanel({
         </>
       )}
 
-      <div className="button-row">
-        <button className="btn" onClick={() => void onSignOut()}>
-          Sign out
-        </button>
-      </div>
+      {changingPassword ? (
+        <PasswordForm
+          intro="Pick a new password for this account. You'll stay signed in here."
+          submitLabel="Change password"
+          onSubmit={onChangePassword}
+          onCancel={() => setChangingPassword(false)}
+          onDone={() => {
+            setChangingPassword(false);
+            setPasswordChanged(true);
+          }}
+        />
+      ) : (
+        <div className="button-row">
+          <button className="btn" onClick={() => setChangingPassword(true)}>
+            Change password
+          </button>
+          <button className="btn" onClick={() => void onSignOut()}>
+            Sign out
+          </button>
+          {passwordChanged && <span className="notice">Password updated.</span>}
+        </div>
+      )}
     </section>
   );
 }

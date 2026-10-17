@@ -10,6 +10,7 @@ import { Modal } from './components/Modal';
 import { AuthForm } from './components/AuthForm';
 import { HouseholdSetup } from './components/HouseholdSetup';
 import { SharingPanel } from './components/SharingPanel';
+import { PasswordForm } from './components/PasswordForm';
 
 type StatusFilter = 'all' | DerivedStatus;
 type SortKey = 'next' | 'cost' | 'name' | 'category';
@@ -101,6 +102,26 @@ export default function App() {
 
   const hasAny = data.subscriptions.length > 0;
   const inCloud = Boolean(sync.user && sync.household);
+
+  // Arrived from a reset link. This gate comes first — the link already signed
+  // them in, so without it they'd slip straight into the app with the password
+  // they came here to change still in place.
+  if (sync.recovering) {
+    return (
+      <div className="setup">
+        <div className="setup-card">
+          <h1>Set a new password</h1>
+          <PasswordForm
+            intro={`Choose a new password for ${sync.user?.email ?? 'your account'}.`}
+            submitLabel="Save password"
+            onSubmit={auth.updatePassword}
+            onCancel={auth.cancelRecovery}
+            onDone={() => undefined}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // Signed in but not yet in a shared household — nothing else makes sense yet.
   if (sync.configured && sync.user && !sync.household && sync.status !== 'loading') {
@@ -279,6 +300,7 @@ export default function App() {
           <AuthForm
             onSignIn={auth.signIn}
             onSignUp={auth.signUp}
+            onSendReset={auth.sendPasswordReset}
             onDone={() => setShowAuth(false)}
           />
         </Modal>
@@ -299,6 +321,7 @@ export default function App() {
                 onSignOut={auth.signOut}
                 onRotateCode={auth.rotateInviteCode}
                 onReloadMembers={auth.reloadMembers}
+                onChangePassword={auth.updatePassword}
               />
             }
             onAddAccount={actions.addAccount}

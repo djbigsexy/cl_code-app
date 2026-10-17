@@ -1,0 +1,71 @@
+# Keeps the Supabase project from auto-pausing.
+#
+# Free-tier projects pause after roughly a week without activity, and a paused
+# project can't sign anyone in — the app just reports "Couldn't reach the
+# server", which looks like a bug rather than a sleeping backend.
+#
+# This pings a trivial RPC (public.keepalive, see supabase/schema.sql) every
+# three days. It targets a real function so the request reaches Postgres;
+# hitting an endpoint that errors on permissions would be an HTTP round trip
+# that may never touch the database.
+#
+# A silent keep-alive is worse than none, so the job asserts a 200 and fails
+# loudly otherwise.
+#
+# Caveat worth knowing: GitHub disables scheduled workflows in a repository
+# with no activity for 60 days. If you don't touch the repo for two months,
+# this stops running and the project will pause. Re-enable it from the Actions
+# tab, or just run it manually from there now and then.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 07:17 UTC every third day. Off the hour on purpose — scheduled jobs
+    # queued at :00 get delayed when GitHub is busy.
+    - cron: '17 7 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the database
+        env:
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+          KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${URL:-}" ] || [ -z "${KEY:-}" ]; then
+            echo "::error::VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set as repository secrets."
+            exit 1
+          fi
+
+          # Retry a few times: a project that has *just* paused takes a while to
+          # answer while it wakes, and a single failed curl shouldn't report the
+          # keep-alive as broken.
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS -o /tmp/body.txt -w '%{http_code}' --max-time 30 \
+              -X POST "${URL}/rest/v1/rpc/keepalive" \
+              -H "apikey: ${KEY}" \
+              -H 'Content-Type: application/json' \
+              -d '{}' || echo "000")
+
+            if [ "$code" = "200" ]; then
+              echo "Database answered at $(cat /tmp/body.txt)"
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}: HTTP ${code} — $(head -c 200 /tmp/body.txt 2>/dev/null || true)"
+            [ "$attempt" -lt 5 ] && sleep $((attempt * 30))
+          done
+
+          echo "::error::Keep-alive ping failed. The project may be paused, or the keepalive function or secrets may be missing."
+          exit 1

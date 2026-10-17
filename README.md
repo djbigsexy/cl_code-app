@@ -175,8 +175,22 @@ configure a custom SMTP provider under **Authentication → Emails**.
 
 Supabase pauses free-tier projects after about a week with no activity. A paused
 project means the app can't sign anyone in — it reports *Couldn't reach the
-server* — until you restore it from the dashboard. Regular use keeps it awake;
-a long quiet spell doesn't.
+server*, which looks like a bug rather than a sleeping backend — until you
+restore it from the dashboard.
+
+[`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) prevents
+that: every three days it calls `public.keepalive()`, a function that exists
+only to give the ping something real to execute, so the request reaches Postgres
+and counts as activity. It reuses the same two repository secrets as the deploy,
+and fails loudly if the ping doesn't come back 200 — a keep-alive that fails
+silently is worse than none.
+
+You can run it on demand from the **Actions** tab.
+
+One caveat: GitHub disables scheduled workflows in a repository with no activity
+for 60 days. If you don't touch the repo for two months the keep-alive stops and
+the project will pause. Re-enable it from the Actions tab, or run it manually
+now and then.
 
 ## Your data
 

@@ -4,10 +4,17 @@
 # project can't sign anyone in — the app just reports "Couldn't reach the
 # server", which looks like a bug rather than a sleeping backend.
 #
-# This pings a trivial RPC (public.keepalive, see supabase/schema.sql) every
-# three days. It targets a real function so the request reaches Postgres;
+# This pings a trivial RPC (public.keepalive, see supabase/schema.sql) four
+# times a day. It targets a real function so the request reaches Postgres;
 # hitting an endpoint that errors on permissions would be an HTTP round trip
 # that may never touch the database.
+#
+# The cadence matters more than it looks. Supabase's rule is "a few user
+# requests to the database each day over the previous week". An earlier version
+# of this file ran every three days — roughly two requests a week — and the
+# project paused anyway, between two pings that both returned 200. Pinging
+# successfully is not the same as pinging often enough, so don't stretch this
+# interval back out.
 #
 # A silent keep-alive is worse than none, so the job asserts a 200 and fails
 # loudly otherwise.
@@ -20,9 +27,10 @@ name: Keep Supabase awake
 
 on:
   schedule:
-    # 07:17 UTC every third day. Off the hour on purpose — scheduled jobs
-    # queued at :00 get delayed when GitHub is busy.
-    - cron: '17 7 */3 * *'
+    # Every six hours, off the hour on purpose — scheduled jobs queued at :00
+    # get delayed when GitHub is busy, and a delayed keep-alive is fine but a
+    # skipped one is not.
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions:

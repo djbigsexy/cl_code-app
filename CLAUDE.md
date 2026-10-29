@@ -121,7 +121,11 @@ each — run the tests after touching `lib/billing.ts`.
   errors on permissions is an HTTP round trip that may never touch the database. It is
   `SECURITY INVOKER` (it reads nothing, so it needs no elevated rights and stays out of
   the definer advisories) and the workflow asserts a 200, because a keep-alive that
-  fails silently is worse than not having one.
+  fails silently is worse than not having one. **Cadence is part of the fix, not a
+  detail:** Supabase wants "a few user requests to the database each day over the
+  previous week", so the workflow runs every six hours. A previous version ran every
+  three days and the project paused anyway, between two pings that both returned 200.
+  Don't widen the interval.
 - **`normalize()` and `cloud.ts` are the two trust boundaries.** New `Subscription` fields need a
   default in `normalize()`, a column in `schema.sql`, and an entry in *both* `toSubscription` and
   `fromSubscription` — miss one and the field silently stops persisting.

@@ -179,11 +179,17 @@ server*, which looks like a bug rather than a sleeping backend — until you
 restore it from the dashboard.
 
 [`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) prevents
-that: every three days it calls `public.keepalive()`, a function that exists
+that: four times a day it calls `public.keepalive()`, a function that exists
 only to give the ping something real to execute, so the request reaches Postgres
 and counts as activity. It reuses the same two repository secrets as the deploy,
 and fails loudly if the ping doesn't come back 200 — a keep-alive that fails
 silently is worse than none.
+
+The cadence is deliberate. Supabase's rule is "a few user requests to the
+database each day over the previous week". An earlier version of this workflow
+ran every three days and the project paused anyway, between two pings that both
+returned 200 — pinging successfully is not the same as pinging often enough.
+Don't stretch the interval back out.
 
 You can run it on demand from the **Actions** tab.
 
